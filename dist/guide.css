@@ -1,0 +1,8 @@
+:root{--paper:#f7f7f7;--text-main:#101010;--line:#555;--surface-raised:#f4f4f4;--accent-main:#111}
+body{max-width:800px;padding:40px 22px;margin:auto;background:var(--paper);color:var(--text-main);font:19px/1.7 Newsreader,Georgia,serif}
+h1,h2,a,code,.guide-header label{font-family:Syne,"Segoe UI",sans-serif}
+h1{font-size:32px;line-height:1.3}h2{font-size:21px;line-height:1.4;margin-top:32px}li{margin:18px 0}p{margin:18px 0}
+code{font-size:14px;background:var(--surface-raised);padding:3px 6px;border-radius:4px;overflow-wrap:anywhere}a{color:var(--text-main);text-underline-offset:4px}a:focus-visible,select:focus-visible{outline:2px solid var(--accent-main);outline-offset:4px}
+.guide-header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:14px}.guide-header label{display:grid;gap:4px}.guide-header select{background:var(--paper);color:var(--text-main);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit;min-height:44px}
+html[lang=ru-RU] body{font-family:Georgia,serif}html[lang=ru-RU] h1,html[lang=ru-RU] h2,html[lang=ru-RU] a,html[lang=ru-RU] .guide-header label{font-family:"Segoe UI",Arial,sans-serif}
+@media(max-width:420px){body{padding:24px 18px;font-size:18px}.guide-header{align-items:flex-start}h1{font-size:28px}ol,ul{padding-left:24px}}

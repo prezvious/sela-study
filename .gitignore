@@ -1,0 +1,49 @@
+# Credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.template
+.npmrc
+.netrc
+_netrc
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and local deployment/editor tooling
+node_modules/
+.sites-runtime/
+.openai/
+.codex/
+.vscode/
+.idea/
+
+# Generated verification files and screenshots
+/sela-*-evidence.json
+/sela-*-hashes.json
+/sela-*.png
+coverage/
+test-results/
+playwright-report/
+
+# Personal study exports and recovery downloads
+/sela-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].json
+/sela-*-20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].json
+backups/
+
+# Scratch work and generated deliverables
+/work/
+/outputs/
+*.log
+*.tmp
+*.temp
+*.tar.gz
+*.zip
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# dist/ is maintained application source; keep it under version control.

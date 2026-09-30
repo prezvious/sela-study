@@ -1,0 +1,5 @@
+# Preserve copied theme files byte-for-byte, including their line endings.
+/dist/vendor/themes.mjs -text
+/dist/vendor/globals.css -text
+/dist/vendor/redesign.css -text
+/dist/vendor/interfaceStyles.css -text
