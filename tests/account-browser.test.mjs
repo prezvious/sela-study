@@ -29,8 +29,20 @@ async function context(width=1280){
 }
 async function page(c){const p=await c.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(origin+'/');return p;}
 async function waitGoal(p,goal){await p.waitForFunction(goal=>{const key=Object.keys(localStorage).find(key=>key.startsWith('sela.account.v1.')&&key.endsWith('.A'));return key&&JSON.parse(localStorage.getItem(key)).settings.goal===goal;},goal);}
+async function waitSaved(p){
+ await p.evaluate(async()=>{
+  const {getConfig}=await import('./cloud.mjs'),{workspaceKey,parseWorkspace,sameDocument}=await import('./sync.mjs');
+  window.__fixtureIsSaved=()=>{
+   const project=getConfig().url,user=JSON.parse(localStorage.getItem('sela.supabase.auth.'+new URL(project).hostname))?.user;
+   if(!user)return false;
+   const record=parseWorkspace(localStorage.getItem(workspaceKey(project,user.id)));
+   return record?.revision>0&&sameDocument(record.doc,record.base);
+  };
+ });
+ await p.waitForFunction(()=>window.__fixtureIsSaved());
+}
 async function login(p,email='alice@example.invalid'){
- await p.locator('.account-entry').click();await p.locator('#cloud-auth input[name=email]').fill(email);await p.locator('#cloud-auth input[name=password]').fill('test-password');await p.locator('#cloud-auth button[type=submit]').click();await p.locator('.account-email').waitFor();await p.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');
+ await p.locator('.account-entry').click();await p.locator('#cloud-auth input[name=email]').fill(email);await p.locator('#cloud-auth input[name=password]').fill('test-password');await p.locator('#cloud-auth button[type=submit]').click();await p.locator('.account-email').waitFor();await waitSaved(p);
 }
 try{
  const desktop=await context(),a=await page(desktop);await a.locator('.account-entry').click();await a.locator('[data-action="account-mode"][data-value="signup"]').click();
@@ -38,7 +50,7 @@ try{
  await a.locator('#cloud-auth input[name=email]').fill('alice@example.invalid');await a.locator('#cloud-auth input[name=password]').fill('test-password');await a.locator('#cloud-auth input[name=confirmation]').fill('test-password');await a.locator('#cloud-auth button[type=submit]').click();await a.locator('.account-message').waitFor();assert.match(await a.locator('.account-message').innerText(),/email/i);
  await a.locator('[data-action="account-mode"][data-value="login"]').click();await a.locator('[data-action="account-mode"][data-value="reset"]').click();await a.locator('#cloud-auth input[name=email]').fill('alice@example.invalid');await a.locator('#cloud-auth button[type=submit]').click();await a.locator('.account-message').waitFor();assert.match(await a.locator('.account-message').innerText(),/reset link/i);
  await a.locator('[data-action="account-mode"][data-value="login"]').click();await a.screenshot({path:'work/account-qa/desktop-signin.png',fullPage:true});
- await login(a);await a.locator('[data-action="nav"][data-view="study"]').first().click();await a.locator('[data-action="add-subject"]').first().click();await a.locator('#modal input[name=name]').fill('Mathematics');await a.locator('#modal button[type=submit]').click();await a.locator('#modal').waitFor({state:'hidden'});await a.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');assert.equal(rows.get('A').data.subjects[0].name,'Mathematics');
+ await login(a);await a.locator('[data-action="nav"][data-view="study"]').first().click();await a.locator('[data-action="add-subject"]').first().click();await a.locator('#modal input[name=name]').fill('Mathematics');await a.locator('#modal button[type=submit]').click();await a.locator('#modal').waitFor({state:'hidden'});await a.locator('.subject-name').filter({hasText:'Mathematics'}).waitFor();await waitSaved(a);assert.equal(rows.get('A').data.subjects[0].name,'Mathematics');
 
  // Clean polls leave the existing date input connected and keep its partial draft.
  const originalDate=await a.locator('#task-date').inputValue(),input=await a.locator('#task-date').elementHandle();
@@ -68,18 +80,18 @@ try{
  assert.equal(await a.locator('#modal .date-picker').count(),1);assert.equal(await a.evaluate(()=>document.activeElement.dataset.datePick),pickerFocus);
  await a.evaluate(async()=>{const {setLocale}=await import('./i18n.mjs');setLocale('en-GB');});
  await a.locator('#modal [data-action="close-modal"]').first().click();
- await a.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');
+ await waitSaved(a);
  const mobile=await context(390),b=await page(mobile);await b.locator('.account-entry').click();await b.screenshot({path:'work/account-qa/mobile-signin.png',fullPage:true});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await login(b);await b.locator('[data-action="nav"][data-view="study"]').first().click();assert.ok(await b.locator('#timer-subject').innerText().then(t=>t.includes('Mathematics')));
- await a.locator('[data-action="toggle-timer"]').click();await a.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');await b.locator('.account-entry').click();await b.locator('[data-action="sync-now"]').click();await b.locator('[data-action="nav"][data-view="study"]').first().click();await b.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='true');
- await b.locator('[data-action="toggle-timer"]').click();await b.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');await a.locator('.account-entry').click();await a.locator('[data-action="sync-now"]').click();await a.locator('[data-action="nav"][data-view="study"]').first().click();await a.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='false');
+ await a.locator('[data-action="toggle-timer"]').click();await a.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='true');await waitSaved(a);await b.locator('.account-entry').click();await b.locator('[data-action="sync-now"]').click();await b.locator('[data-action="nav"][data-view="study"]').first().click();await b.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='true');
+ await b.locator('[data-action="toggle-timer"]').click();await b.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='false');await waitSaved(b);await a.locator('.account-entry').click();await a.locator('[data-action="sync-now"]').click();await a.locator('[data-action="nav"][data-view="study"]').first().click();await a.waitForFunction(()=>document.querySelector('[data-action="toggle-timer"]')?.dataset.running==='false');
  await a.locator('.account-entry').click();await a.screenshot({path:'work/account-qa/desktop-account.png',fullPage:true});await b.locator('.account-entry').click();await b.screenshot({path:'work/account-qa/mobile-account.png',fullPage:true});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  // Repair a damaged metadata envelope without losing the paused stopwatch or records.
  const corrupt=await b.evaluate(()=>{const key=Object.keys(localStorage).find(key=>key.startsWith('sela.account.v1.')&&key.endsWith('.A')),doc=JSON.parse(localStorage.getItem(key));doc._sync.revision=-1;const raw=JSON.stringify(doc);localStorage.setItem(key,raw);return raw;});
  await b.reload();await b.locator('[data-action="repair-account-cache"]').waitFor();
  const [backup]=await Promise.all([b.waitForEvent('download'),b.locator('[data-action="repair-account-cache"]').click()]);
  assert.equal(await fs.readFile(await backup.path(),'utf8'),corrupt);
- await b.waitForFunction(()=>document.querySelector('.sync-label')?.textContent==='Saved to your account');
+ await waitSaved(b);
  const repaired=await b.evaluate(()=>{const key=Object.keys(localStorage).find(key=>key.startsWith('sela.account.v1.')&&key.endsWith('.A'));return JSON.parse(localStorage.getItem(key));});
  assert.deepEqual(repaired.timer,JSON.parse(corrupt).timer);assert.deepEqual(repaired.subjects,JSON.parse(corrupt).subjects);
  await b.locator('.account-entry').click();
