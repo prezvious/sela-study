@@ -50,9 +50,14 @@ export function formatDuration(ms,{long=false}={}){
 }
 export function formatHours(hours){return formatNumber(hours,{style:'unit',unit:'hour',unitDisplay:'narrow',minimumFractionDigits:1,maximumFractionDigits:1});}
 export const firstWeekday=()=>currentLocale==='en-US'?0:1;
-export function localeWeekStart(value){const d=new Date(value);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()-firstWeekday()+7)%7);return d;}
+export function localeWeekStart(value){const d=new Date(value);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()-firstWeekday()+7)%7);d.setHours(0,0,0,0);return d;}
 export function weekdayNames(width='short'){const sunday=new Date(2026,0,4);return Array.from({length:7},(_,i)=>{const date=new Date(sunday);date.setDate(sunday.getDate()+firstWeekday()+i);return formatDate(date,{weekday:width});});}
-export function formatDateInput(iso){return intl('DateTimeFormat',{day:'2-digit',month:'2-digit',year:'numeric'}).formatToParts(new Date(iso+'T00:00:00')).map(part=>part.type==='year'?part.value.padStart(4,'0'):part.value).join('');}
+export function validCivilDate(iso){
+ if(typeof iso!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(iso)||iso.startsWith('0000-'))return false;
+ const date=new Date(iso+'T00:00:00Z');return Number.isFinite(+date)&&date.toISOString().slice(0,10)===iso;
+}
+export function formatCivilDate(iso,options={day:'numeric',month:'long',year:'numeric'}){return intl('DateTimeFormat',{...options,timeZone:'UTC'}).format(new Date(iso+'T00:00:00Z'));}
+export function formatDateInput(iso){return intl('DateTimeFormat',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}).formatToParts(new Date(iso+'T00:00:00Z')).map(part=>part.type==='year'?part.value.padStart(4,'0'):part.value).join('');}
 export function parseDateInput(text){
  text=String(text).trim();let year,month,day;
  if(/^\d{4}-\d{2}-\d{2}$/.test(text))[year,month,day]=text.split('-').map(Number);
@@ -62,9 +67,9 @@ export function parseDateInput(text){
   const match=text.match(new RegExp('^'+pattern+'$'));if(!match)throw new LocalisedError('validation.date',{format:message('date.format')});
   const values=Object.fromEntries(types.map((type,i)=>[type,Number(match[i+1])]));({year,month,day}=values);
  }
- const date=new Date(0);date.setHours(0,0,0,0);date.setFullYear(year,month-1,day);
- if(year<1||year>9999||date.getFullYear()!==year||date.getMonth()!==month-1||date.getDate()!==day)throw new LocalisedError('validation.date',{format:message('date.format')});
- return String(year).padStart(4,'0')+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+ const iso=String(year).padStart(4,'0')+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+ if(!validCivilDate(iso))throw new LocalisedError('validation.date',{format:message('date.format')});
+ return iso;
 }
 export function applyDocumentLocale(document=globalThis.document){
  if(!document)return;document.documentElement.lang=currentLocale;document.documentElement.dir='ltr';

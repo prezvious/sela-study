@@ -2,10 +2,16 @@ import {LocalisedError,message} from './i18n.mjs';
 const KEY='sela.supabase.config.v1';
 const CONFIG_CHANGED='error.configChanged';
 const ACCOUNT_CHANGED='error.accountChanged';
+export const DEFAULT_CONFIG=Object.freeze({url:'https://ivpfjzzthdwayvygahbx.supabase.co',key:'sb_publishable_a2GpBJTv5TxDh5QSJZh6nw_gWs4x54G'});
+const authListeners=new Set();
 let clientEntry=null,pendingEntry=null,connectionId=0;
-export function getConfig(){try{const v=JSON.parse(localStorage.getItem(KEY));return v&&typeof v.url==='string'&&typeof v.key==='string'?v:{};}catch{return {};}}
+export function getConfig(){try{const v=JSON.parse(localStorage.getItem(KEY));return v&&typeof v.url==='string'&&typeof v.key==='string'?v:{...DEFAULT_CONFIG};}catch{return {...DEFAULT_CONFIG};}}
+function publishAuth(user,event='INITIAL_SESSION',error=null,connection=clientEntry){const stamp=signature(getConfig()),revision=connection?.identityRevision;Promise.resolve().then(()=>{if(stamp!==signature(getConfig())||connection&&(clientEntry!==connection||connection.identityRevision!==revision))return;for(const listener of authListeners)listener({user,event,error,project:getConfig().url});});}
+export function watchAuth(listener){authListeners.add(listener);try{const user=JSON.parse(localStorage.getItem('sela.supabase.auth.'+new URL(getConfig().url).hostname))?.user;if(typeof user?.id==='string')publishAuth(user,'CACHED_SESSION');}catch{}refreshAuth();return ()=>authListeners.delete(listener);}
+export async function refreshAuth(){try{const c=await getClient(),entry=clientEntry,revision=entry.identityRevision;const {data,error}=await c.auth.getSession();assertClient(c);if(entry.identityRevision!==revision)return;if(error)throw authError(error);publishAuth(data.session?.user||null);}catch(error){publishAuth(null,'ERROR',error);}}
+function returnUrl(){const url=new URL(location.href||location.origin+'/');url.hash='';url.search='';return url.href;}
 const signature=({url='',key=''})=>url+'\n'+key;
-function clearClient(){const entry=clientEntry;clientEntry=null;pendingEntry=null;entry?.subscription?.unsubscribe();entry?.client.auth.stopAutoRefresh();}
+function clearClient(){const entry=clientEntry;clientEntry=null;pendingEntry=null;entry?.subscription?.unsubscribe();entry?.client.auth.stopAutoRefresh();if(authListeners.size){publishAuth(null,'CONFIG_CHANGED');refreshAuth();}}
 function observeIdentity(entry,userId){if(entry.userId!==undefined&&entry.userId!==userId)entry.identityRevision++;entry.userId=userId;}
 function storedUser(entry){try{const raw=localStorage.getItem(entry.storageKey);if(!raw)return null;const userId=JSON.parse(raw)?.user?.id;return typeof userId==='string'?userId:null;}catch{return undefined;}}
 globalThis.window?.addEventListener('storage',event=>{if(event.key===KEY||event.key===null)clearClient();});
@@ -35,7 +41,7 @@ async function getClient(){
    const storageKey='sela.supabase.auth.'+new URL(url).hostname;
    const client=createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey}});initializingClient=client;
    const connection={stamp,client,storageKey,id:++connectionId,userId:undefined,identityRevision:0,subscription:null};
-   connection.subscription=client.auth.onAuthStateChange((event,session)=>observeIdentity(connection,session?.user?.id||null)).data.subscription;
+   connection.subscription=client.auth.onAuthStateChange((event,session)=>{observeIdentity(connection,session?.user?.id||null);if(clientEntry===connection||event==='INITIAL_SESSION')publishAuth(session?.user||null,event,null,connection);}).data.subscription;
    clientEntry=connection;initializingClient=null;
    return client;
   }catch(error){initializingClient?.auth.stopAutoRefresh();if(error.key===CONFIG_CHANGED)throw error;throw new LocalisedError('error.cloudNetwork');}
@@ -44,7 +50,9 @@ async function getClient(){
  return entry.promise;
 }
 function assertClient(c){if(clientEntry?.client!==c||clientEntry.stamp!==signature(getConfig()))throw new LocalisedError(CONFIG_CHANGED);}
-export async function authenticate(email,password,mode){const c=await getClient();assertClient(c);const {data,error}=mode==='signup'?await c.auth.signUp({email,password,options:{emailRedirectTo:location.origin}}):await c.auth.signInWithPassword({email,password});assertClient(c);if(error)throw authError(error);return data.session?message('cloud.signedIn',{email}):message('cloud.confirmEmail');}
+export async function authenticate(email,password,mode){const c=await getClient();assertClient(c);const {data,error}=mode==='signup'?await c.auth.signUp({email:String(email).trim(),password,options:{emailRedirectTo:returnUrl()}}):await c.auth.signInWithPassword({email:String(email).trim(),password});assertClient(c);if(error)throw authError(error);return data.session?message('cloud.signedIn',{email}):message('cloud.confirmEmail');}
+export async function requestReset(email){const c=await getClient();const {error}=await c.auth.resetPasswordForEmail(String(email).trim(),{redirectTo:returnUrl()});assertClient(c);if(error)throw authError(error);return message('account.resetSent');}
+export async function updatePassword(password){const c=await getClient();const {error}=await c.auth.updateUser({password});assertClient(c);if(error)throw authError(error);return message('account.passwordUpdated');}
 async function current(){
  const c=await getClient();assertClient(c);const entry=clientEntry,identityRevision=entry.identityRevision,storedUserId=storedUser(entry);
  const {data,error}=await c.auth.getUser();assertClient(c);if(error||!data.user)throw new LocalisedError('error.cloudSignIn');
@@ -62,7 +70,7 @@ export function assertCurrentContext(expected){
 }
 export async function checkContext(expected){const result=await current();assertContext(result.context,expected);assertCurrentContext(expected);return result;}
 export async function load(){const {c,user,context}=await current();const {data,error}=await c.from('study_data').select('data,revision,updated_at').eq('user_id',user.id).maybeSingle();assertClient(c);assertCurrentContext(context);if(error)throw new LocalisedError('error.cloudLoad');return {...(data||{data:null,revision:0}),context};}
-export async function save(data,revision,expected){const {c,user}=await checkContext(expected);assertClient(c);assertCurrentContext(expected);const {error}=await c.rpc('save_study_data',{p_data:data,p_expected_revision:revision,p_expected_user_id:user.id});if(error){if(String(error.message||'').includes('ACCOUNT_CHANGED'))throw new LocalisedError(ACCOUNT_CHANGED);if(String(error.message||'').includes('CLOUD_CONFLICT'))throw new LocalisedError('error.cloudConflict');throw new LocalisedError('error.cloudSave');}assertClient(c);assertCurrentContext(expected);}
+export async function save(data,revision,expected){const {c,user}=await checkContext(expected);assertClient(c);assertCurrentContext(expected);const {data:nextRevision,error}=await c.rpc('save_study_data',{p_data:data,p_expected_revision:revision,p_expected_user_id:user.id});if(error){if(String(error.message||'').includes('ACCOUNT_CHANGED'))throw new LocalisedError(ACCOUNT_CHANGED);if(String(error.message||'').includes('CLOUD_CONFLICT'))throw new LocalisedError('error.cloudConflict');throw new LocalisedError('error.cloudSave');}assertClient(c);assertCurrentContext(expected);return nextRevision??revision+1;}
 export async function signOut(){const c=await getClient();const {error}=await c.auth.signOut();assertClient(c);if(error)throw new LocalisedError('error.cloudOut');}
 
 function authError(error){

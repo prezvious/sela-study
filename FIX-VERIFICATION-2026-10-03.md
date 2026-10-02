@@ -1,0 +1,28 @@
+# Confirmed bug fixes — 3 October 2026
+
+All ten findings from [AUDIT-2026-10-03.md](AUDIT-2026-10-03.md) are fixed in the current working tree. Existing uncommitted work was preserved. The fixes include maintained regressions and browser checks using synthetic records.
+
+| Finding | Correction | Verification |
+| --- | --- | --- |
+| A101: stale editors overwrite independent edits | Task and subject submissions compare the original draft with the latest record under the write lock. Unchanged fields keep newer values; conflicting changes or deleted records are rejected. Independent tasks retain their empty subject selection, and colour comparisons account for browser hex normalization. | Actual modal submit handlers in `confirmed-bugs.test.mjs`: two-tab task/subject merges, same-field conflict, deletion, independent subject, uppercase hex. |
+| A102: storage-read failure blocks retries | Flush work starts in a promise continuation after its task handle is assigned. Cleanup runs even when the first read fails. A deferred flush also checks its account generation before doing any work. | `sync.test.mjs`: one synchronous read failure followed by a successful retry; queued flush cannot act after account switch. |
+| A103: weekly history loses the first hour after DST | Weekly boundaries reset to local midnight after moving to the target weekday. History and aggregation use the same boundary. | `confirmed-bugs.test.mjs`: Santiago's September 2026 midnight transition includes the Monday 00:00–00:30 session in both history and weekly totals. |
+| A104: sign-out leaves Account controls disabled | Clearing the operation's busy flag redraws Account as well as Settings. | Real Edge browser: failed and successful sign-out both leave usable Account controls without navigation. |
+| A105: polling discards date drafts and closes pickers | Sync publishes only changed display documents, and unchanged statuses avoid redundant renders. Necessary renders retain partial date input, localized valid dates, selection/focus, open picker month, and its focused control. Modal locale redraws retain picker state too. | `sync.test.mjs` and real Edge: unchanged poll leaves input connected; changed cloud records preserve drafts/focus, picker month, grid/close-button focus, and modal picker across locale changes. |
+| A106: reconciled conflicts return on the next poll | Successful reconciliation clears the old conflict. A newer cache revision or an acknowledged resolution from another tab invalidates stale conflict state. | `sync.test.mjs`: forced reconciliation, following ordinary polls, and other-tab resolution. |
+| A107: timezone gaps reject valid task dates | Task validation, date entry/formatting, and task headings treat task dates as Gregorian civil dates using UTC, independently of local timestamp gaps. Picker navigation still follows the local calendar. | `confirmed-bugs.test.mjs`: identical `2011-12-30` tasks validate, parse, display, and round-trip in UTC, Apia, and Santiago; invalid leap dates remain rejected. |
+| A108: corrupt account metadata bypasses recovery | All account read paths validate the full cache envelope. Invalid metadata exposes original-byte download and repair while blocking writes. Repair checks the current cache under the lock, preserves study records and the live timer, downloads the original bytes, and reconciles with cloud without treating preserved records as an empty seed. Logical errors retain their actual message. Recovery actions are translated in all six locales. | Actual UI handlers and real Edge: corrupt metadata, blocked edit, byte-exact download, retained running/paused timer and records, stale repair rejection. `sync.test.mjs`: different cloud document remains a conflict until an explicit choice. |
+| A109: guide Back leaves a subdirectory deployment | Back resolves to `./`, the guide's application directory. | `confirmed-bugs.test.mjs` renders the guide at a subdirectory URL and checks the destination. |
+| A110: subject totals stop updating while running | The timer tick updates the active subject's lifetime text from recorded intervals and its current segment. | Actual guest UI clock advances two minutes on Subjects without navigation and verifies the updated total. |
+
+## Completed verification
+
+- `node sela-audit-repro.mjs`: **15/15 regression scripts passed**, including **23 stress groups**, three fixed seeds, and seven timezone workers. The six-locale check passed **2,496 fixed messages**, plural forms, and placeholders.
+- Expanded `tests/account-browser.test.mjs` on installed Microsoft Edge: **passed** at desktop and mobile sizes, including authentication/timer sync, date drafts and picker state, cache repair/download, sign-out controls, and account isolation. No page errors or horizontal overflow were reported.
+- `tests/schema.test.mjs` using the existing local PGlite installation: **passed**, including repeated schema installation, revision checks, account guards, RLS isolation, and anonymous restrictions.
+- Node syntax validation: **41 maintained JavaScript modules passed**.
+- `git diff --check`: **passed**.
+
+The browser suite starts an isolated static server on an available local port and intercepts the Supabase SDK/server. SQL checks use an isolated local database. These checks sent no authentication email and changed no live Supabase records. They do not verify live hosting, email delivery, or every possible defect.
+
+The older ignored `work/audit-*-2026-10-03.mjs` probes record the original buggy behaviour. Current passing checks are the maintained tests above. Reload open application tabs to use the updated code.

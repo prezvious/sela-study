@@ -1,6 +1,6 @@
 # sela. — A space to study
 
-sela. is a small, multilingual study workspace for tracking time by subject, planning tasks, and seeing how your study habits develop. Your records are saved in your browser. You can use every local study feature without creating an account, and optionally use Supabase to back up and restore your records across devices.
+sela. is a small, multilingual study workspace for tracking time by subject, planning tasks, and seeing how your study habits develop. Create an account or sign in to automatically save and sync your workspace across devices and application addresses. Guest study remains available with records saved in your browser.
 
 The application uses plain HTML, CSS, and JavaScript modules. There is no frontend build step or package installation for normal use.
 
@@ -52,7 +52,8 @@ Archiving a subject keeps its history. You can restore it later; archived subjec
 | Calendar | Explore the last 90 days, a selected week, or a selected month; open a date for its study details. |
 | Statistics | View daily, weekly, and monthly totals, average time, subject breakdowns, uninterrupted focus, and clipped session history. |
 | Daily goal | Set a whole number from 15 to 1,440 minutes and follow today's progress. |
-| Backups | Export and import validated JSON; optionally save or restore a manual Supabase backup. |
+| Accounts and sync | Email/password sign-up, sign-in, email confirmation, password reset, automatic saving, offline retry, and conflict resolution. |
+| Backups | Export and import validated JSON; export both versions before resolving a sync conflict. |
 | Appearance | Choose from 59 themes, light/dark/system mode, and Studio or Opaline Abacus layouts. |
 | Languages | Use complete bundled Indonesian, UK English, US English, Spanish, French, and Russian catalogues. |
 
@@ -72,9 +73,9 @@ Weeks start on Sunday in US English and Monday in the other languages. A streak 
 
 ### Where your records live
 
-Study records are stored in the browser's `localStorage`, under `sela.study.v1`; the saved study schema is **version 2**. The storage-key suffix is retained for compatibility. Language preferences, Supabase connection settings, and authentication state are stored separately and are excluded from study-data backups.
+Guest study records are stored in `localStorage` under `sela.study.v1`; the study schema remains **version 2**. Each signed-in workspace has its own `sela.account.v1.<project-host>.<user-id>` key. The account document and its last acknowledged cloud revision/snapshot are saved together so pending edits survive a reload. Language is included in automatic account sync; JSON study backups contain the study dataset and appearance settings. Supabase connection settings, passwords, and authentication tokens are excluded from study backups.
 
-Browser storage belongs to a particular **origin**: protocol, hostname, and port. `http://127.0.0.1:4318`, `http://localhost:4318`, and a hosted HTTPS address have separate records. Export from the old origin and import into the new one when moving the application or changing devices. Private browsing, clearing site data, or browser storage eviction can remove local records.
+Browser caches and guest records belong to a particular **origin**: protocol, hostname, and port. Signed-in devices using the same account and project retrieve the same cloud workspace, including on different origins. Guest records require JSON export/import to move between origins. Private browsing, clearing site data, or browser storage eviction can remove local records, including pending edits that have not reached the server.
 
 Changes across tabs use Web Locks, with an IndexedDB transaction fallback. Conflicting or stale operations are rejected to protect current records. Reload every open application tab after updating the code so they use the same locking implementation.
 
@@ -86,13 +87,19 @@ Import validates the schema, identifiers, references, dates, durations, and nono
 
 If saved JSON is unreadable, download the original bytes using the recovery controls before starting fresh. A recovery confirmation is rejected if another tab has repaired or changed the saved data in the meantime.
 
+If an account cache has valid study records but damaged sync metadata, **Repair account cache** downloads the original bytes and preserves the records and running or paused stopwatch. The repaired cache then syncs; a different cloud version requires an explicit conflict choice.
+
 ### Legacy records
 
 **Version-1 local datasets are reset once to an empty version-2 dataset**, preserving valid appearance settings. This is an intentional legacy migration. Existing version-2 records remain intact. Demo-marked backups are rejected, and no example subjects, tasks, or sessions are generated for new users.
 
 ## Supabase setup
 
-Supabase adds an optional **manual cloud backup**. Local study does not require it. Saving replaces your account's cloud snapshot; restoring replaces the local dataset after confirmation and a local backup. The application does not automatically merge devices or continuously synchronise records.
+Supabase provides account authentication and **automatic cloud sync**. Sign in using the header's account button or Settings. Subjects, tasks, completed sessions, the running/paused stopwatch, daily goal, theme, interface style, and language sync to the account. Calendar and statistics are calculated from these records.
+
+Edits save locally immediately and are uploaded after a short debounce. Visible pages check for remote changes approximately every ten seconds, and refresh on focus and reconnect. Background browser throttling can delay updates. **Sync now** requests an immediate refresh. Internet access is required for cloud sync; pending local edits retry when connectivity returns. The header shows whether records are saved to the account, pending, offline, or require attention. A running stopwatch syncs timestamps rather than uploading every tick.
+
+Independent edits are merged against the last acknowledged cloud snapshot. Conflicting changes to the same field, incompatible timer changes, or invalid combined study intervals preserve both versions and require a choice. Export each version to inspect it; choosing **Keep device version** or **Use cloud version** downloads both JSON backups before proceeding. JSON exports snapshot active timers; the automatic sync document preserves the live timer. Signing out switches to the separate guest workspace and keeps pending account edits in that account's local cache.
 
 ### Project connection
 
@@ -103,7 +110,7 @@ The project owner supplied these browser-safe connection details:
 | Project URL | `https://ivpfjzzthdwayvygahbx.supabase.co` |
 | Publishable key | `sb_publishable_a2GpBJTv5TxDh5QSJZh6nw_gWs4x54G` |
 
-Enter them in the application's Settings; the README does not automatically configure a browser. If you fork the project, enter your own project's URL and publishable key.
+These browser-safe details are the application's defaults, so users do not need to paste them on every device. Fork owners can change them in **Account → Advanced connection settings**. Use the same project on all devices that should share an account.
 
 The publishable key identifies the application. User authentication and database permissions control access to individual backups. The app also accepts a legacy `anon` key, but the publishable key above is preferred. **Secret and service-role keys must remain outside the browser and repository** because they bypass Row Level Security. No server secret is needed by this application. See [Supabase's API-key documentation](https://supabase.com/docs/guides/getting-started/api-keys).
 
@@ -112,22 +119,23 @@ The publishable key identifies the application. User authentication and database
 1. Open the project's Supabase Dashboard and its **SQL Editor**.
 2. Copy and run the complete [dist/supabase-schema.sql](dist/supabase-schema.sql). It creates `public.study_data`, enables Row Level Security, installs account-scoped policies, and creates the three-parameter `save_study_data` RPC. Run the whole file when updating an older installation so the obsolete RPC signature is removed. It is designed to be rerun without deleting existing backups.
 3. Enable the email/password authentication provider. If email confirmation is enabled, users must follow their confirmation email before signing in.
-4. In **Authentication → URL Configuration**, set the **Site URL** to the final application address and allow the exact origins used by the app, including `http://127.0.0.1:4318/` for this local preview. Sign-up currently uses `location.origin` as its email return address. Prefer hosting at the root of a dedicated origin; a site served below a path needs a corresponding redirect-code adjustment.
+4. In **Authentication → URL Configuration**, set the **Site URL** to the final application address and allow each exact application return URL, including `http://127.0.0.1:4318/` for local preview. Sign-up and password reset return to the application's current path with its query and hash removed. Include a deployed subpath or `index.html` if it appears in the application's address.
 
 The Site URL and redirect allowlist determine where confirmation links can return. Follow [Supabase's redirect-URL documentation](https://supabase.com/docs/guides/auth/redirect-urls) when adding local or hosted addresses.
 
-### Connect and use cloud backups
+### Create an account and sync devices
 
-1. Open **Settings → Supabase**, paste the Project URL and publishable key, and select **Save configuration**.
-2. Enter your email and password and select **Create account**, or **Sign in** for an existing account. The form requires a password of at least eight characters; your project's Auth settings can impose stronger rules.
-3. Select **Back up to the cloud** and confirm the save. To bring that snapshot to another device, configure the same project, sign in to the same account, select **Restore from the cloud**, and confirm the replacement after finishing any local session.
-4. If a revision conflict is reported, another device changed the cloud snapshot after it was read. Export your local records, inspect the latest remote backup, and retry the intended operation. Conflicting datasets are not silently merged.
+1. Select **Sign in** in the header, then **Create account**. Enter your email, a password of at least eight characters, and its confirmation. The project's Auth settings may impose stronger rules.
+2. Confirm your email using the link Supabase sends, then sign in. Existing users can sign in directly. **Forgot password?** sends a reset link and opens the new-password form on return.
+3. The account workspace loads automatically. Sign in to the same account on each other device or app address. Wait for **Saved to your account** before relying on another device receiving an edit.
+4. To bring this browser's previous guest data into the account, finish its guest stopwatch and use **Add guest records** from Account. This merges subjects, tasks, and completed sessions; it preserves the account's preferences and stopwatch. Guest records are retained separately.
+5. If a conflict appears, export and inspect both versions, then choose the version to keep. Unsynchronised edits remain in their account cache until resolved. Use **Sync now** to retry a failed sync.
 
 Each user has one `study_data` row containing `user_id`, `data`, `revision`, and `updated_at`. The supported RPC checks the signed-in account and expected revision before saving. RLS limits authenticated users to their own rows and the schema denies anonymous table access. Full study-data validation is performed by the application; the SQL checks the version marker. Direct writes to your own row can bypass the RPC's revision check, so use the app's save flow for conflict protection.
 
-The Supabase SDK is loaded from `esm.sh` when cloud functionality is used, and cloud operations require internet access. Connection settings and auth sessions are saved for the current browser origin. Signing out leaves local study records available.
+The pinned Supabase SDK is loaded from `esm.sh` when the application starts authentication. Cloud operations require internet access. Connection settings and auth sessions are saved for the current browser origin. A cached account can reopen its local workspace and preserve offline edits if the application itself loads; this is not an installable offline app or service-worker guarantee. Passwords are cleared from the form after requests.
 
-The project URL and key are documented here, but **live database installation, Auth settings, and end-to-end cloud operation have not been verified**. SDK mocks and local PostgreSQL fixtures test the implementation without establishing the state of this hosted project. A [localised setup guide](dist/panduan-supabase.html) is also included.
+Read-only live checks on **2 October 2026** confirmed that the documented project's Auth endpoint is reachable, email sign-up is enabled, confirmation is required, and anonymous access to `study_data` is denied. **Authenticated live database/RPC access, confirmation/reset email delivery, and production redirects have not been verified.** Unit tests and real-browser tests use synthetic accounts and intercepted SDK/server fixtures. Project owners must apply the SQL schema and configure redirect URLs as needed. A [localised setup guide](dist/panduan-supabase.html) is included.
 
 ## Languages and appearance
 
@@ -150,7 +158,7 @@ The 59-theme catalogue and three vendor stylesheets are preserved from the theme
 
 Publish the **contents of `dist/` as the site's public root** on an HTTPS static host. No build command is needed. Preserve the subdirectories and serve `.mjs` files with a JavaScript MIME type. `server.mjs`, test files, and audit documents are development resources and do not need to be deployed to serve the app.
 
-The included Node server is a local preview server; select a hosting service separately for public access. After moving to a hosted origin, import your exported local records, enter the Supabase connection details again, and add the hosted origin to the Supabase redirect allowlist if cloud login is enabled.
+The included Node server is a local preview server; select a hosting service separately for public access. After moving to a hosted origin, sign in to retrieve the account workspace and add the exact hosted return URL to Supabase's redirect allowlist for email confirmation/password resets. Guest records can be moved with JSON export/import. Forks should ship their own browser-safe project defaults.
 
 ## Development and tests
 
@@ -162,7 +170,8 @@ dist/
   app.mjs                Views, forms, and application actions
   core.mjs               Stopwatch, dates, statistics, and validation
   storage.mjs            Cross-tab write locking
-  cloud.mjs              Supabase Auth and manual backups
+  cloud.mjs              Supabase Auth and guarded account transport
+  sync.mjs               Account caches, automatic saving and reconciliation
   i18n.mjs               Locale selection and formatting
   date-input.mjs         Localised date entry and calendar picker
   locales/               Six complete translation catalogues
@@ -172,7 +181,7 @@ dist/
   styles.css             Application layout and components
 tests/                    Regression, stress, and optional browser/SQL tests
 server.mjs                Local preview server on port 4318
-sela-audit-repro.mjs       Runner for all 13 regression scripts
+sela-audit-repro.mjs       Runner for all 15 regression scripts
 ```
 
 `dist/` contains the maintained application source and must stay in Git. `.gitignore` excludes credentials, dependencies, local tooling, personal JSON exports, generated evidence, screenshots, and temporary files. Ignoring a file does not remove it from existing Git history; never commit a secret first and rely on `.gitignore` afterward.
@@ -180,7 +189,7 @@ sela-audit-repro.mjs       Runner for all 13 regression scripts
 ### Run verification
 
 ```sh
-# All 13 regression scripts; writes sela-fix-evidence.json locally.
+# All 15 regression scripts, including account sync; writes evidence locally.
 node sela-audit-repro.mjs
 
 # Bounded, reproducible stress suite: all three default seeds.
@@ -189,9 +198,17 @@ node tests/stress.test.mjs
 # Replay one seed, or run an individual regression.
 node tests/stress.test.mjs --seed=1578770470
 node tests/core.test.mjs
+node tests/sync.test.mjs
 ```
 
-The main regression and stress scripts use Node's built-in modules. The final audit passed all **13 regression scripts** and all **23 stress groups**, including independent stopwatch and concurrent-tab models, generated backups and corruption, storage failures, controlled cloud races, long timers, and explicit-zone calendar oracles. Seven timezone workers cover UTC, Singapore, New York, Paris, Lord Howe, Apia, and Santiago. See [STRESS-TESTS.md](STRESS-TESTS.md) for exact seeds, counts, caps, and isolation.
+The main regression and stress scripts use Node's built-in modules. The current runner covers **15 regression scripts** and **23 stress groups**. Sync regressions cover account isolation, offline reload/reconnect, independent and conflicting device edits, deletions, edits during save, timer transfer, stale account responses, storage-read retries, and conflict cleanup. The confirmed-bug regressions add stale editor merging, metadata recovery, timezone-independent task dates, weekly history boundaries, live subject totals, and guide subpaths. Seven timezone workers cover UTC, Singapore, New York, Paris, Lord Howe, Apia, and Santiago. See [STRESS-TESTS.md](STRESS-TESTS.md) for exact seeds, counts, caps, and isolation.
+
+The optional account browser test starts its own local preview and uses an independently installed Playwright module. It intercepts Supabase with fixtures; it sends no auth email and changes no live records:
+
+```sh
+node tests/account-browser.test.mjs /absolute/path/to/playwright/index.mjs
+# Windows: optionally append msedge or chrome to use an installed browser.
+```
 
 For the optional real-browser IndexedDB fallback check:
 
@@ -211,7 +228,7 @@ The SQL test installs the schema twice and checks revisions, account guards, RLS
 
 ### Audit documentation and practical limits
 
-[AUDIT-2026-10-01.md](AUDIT-2026-10-01.md) documents 13 confirmed fixes with triggers, expected/actual behaviour, causes, and verification. [VALIDATION.md](VALIDATION.md) records broader checks. Earlier investigations are preserved in [FIX-VERIFICATION.md](FIX-VERIFICATION.md), [HIDDEN-BUG-FIXES.md](HIDDEN-BUG-FIXES.md), and [LOCALISATION-VERIFICATION.md](LOCALISATION-VERIFICATION.md).
+[AUDIT-2026-10-03.md](AUDIT-2026-10-03.md) records ten additional confirmed bugs, all corrected in [FIX-VERIFICATION-2026-10-03.md](FIX-VERIFICATION-2026-10-03.md). [AUDIT-2026-10-01.md](AUDIT-2026-10-01.md) documents 13 earlier confirmed fixes with triggers, expected/actual behaviour, causes, and verification. [VALIDATION.md](VALIDATION.md) records broader checks. Earlier investigations are preserved in [FIX-VERIFICATION.md](FIX-VERIFICATION.md), [HIDDEN-BUG-FIXES.md](HIDDEN-BUG-FIXES.md), and [LOCALISATION-VERIFICATION.md](LOCALISATION-VERIFICATION.md).
 
 Automated results cover synthetic records, controlled browser/SDK doubles, and bounded timezone processes. Native browser checks cover selected layouts and keyboard interactions. They do not establish every browser's quota/locking behaviour, screen-reader speech, live Supabase behaviour, production hosting, or freedom from all defects.
 

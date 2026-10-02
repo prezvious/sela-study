@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import crypto from 'node:crypto';
 import * as themes from '../dist/vendor/themes.mjs';
 import * as actual from '../dist/core.mjs';
+import {createSync,parseWorkspace,documentOf} from '../dist/sync.mjs';
 import id from '../dist/locales/id-ID.mjs';
 import gb from '../dist/locales/en-GB.mjs';
 import us from '../dist/locales/en-US.mjs';
@@ -26,8 +27,8 @@ function surface(){
    const attrs=Object.fromEntries(Array.from(m[1].matchAll(/([\w-]+)="([^"]*)"/g),a=>[a[1],a[2]]));
    object.nodes.push({kind:'field',formId:f[1],name:attrs.name,dataset:{},defaultValue:attrs.value||'',value:attrs.value||'',closest:()=>({id:f[1]}),focus(){object.onFocus?.(this);}});
   }
-  for(const m of html.matchAll(/<(?:span|strong|small|p)[^>]*data-(live|subject-time|subject-progress|heat-day)="([^"]+)"[^>]*>([^<]*)/g)){
-   const dataset={};dataset[{'subject-time':'subjectTime','subject-progress':'subjectProgress','heat-day':'heatDay'}[m[1]]||'live']=m[2];
+  for(const m of html.matchAll(/<(?:span|strong|small|p)[^>]*data-(live|subject-time|subject-progress|subject-lifetime|heat-day)="([^"]+)"[^>]*>([^<]*)/g)){
+   const dataset={};dataset[{'subject-time':'subjectTime','subject-progress':'subjectProgress','subject-lifetime':'subjectLifetime','heat-day':'heatDay'}[m[1]]||'live']=m[2];
    object.nodes.push({kind:m[1],key:m[2],textContent:m[3],dataset,style:{width:''}});
   }
   for(const m of html.matchAll(/<button class="heat-cell([^"]*)"([^>]*)>/g)){
@@ -42,7 +43,7 @@ function surface(){
   if(selector==='.heat-cell.today')return object.nodes.filter(n=>n.kind==='heat'&&n.classList.contains('today'));
   const m=selector.match(/^\[data-(subject-time|subject-progress|heat-day)\]$/);return m?object.nodes.filter(n=>n.kind===m[1]):[];
  };
- object.querySelector=selector=>{const field=selector.match(/^#([\w-]+) \[name="([^"]+)"\]$/);if(field)return object.nodes.find(n=>n.kind==='field'&&n.formId===field[1]&&n.name===field[2])||null;const m=selector.match(/^\[data-live="([^"]+)"\]$/);return m?object.nodes.find(n=>n.kind==='live'&&n.key===m[1])||null:null;};
+ object.querySelector=selector=>{const field=selector.match(/^#([\w-]+) \[name="([^"]+)"\]$/);if(field)return object.nodes.find(n=>n.kind==='field'&&n.formId===field[1]&&n.name===field[2])||null;const m=selector.match(/^\[data-(live|subject-lifetime)="([^"]+)"\]$/);return m?object.nodes.find(n=>n.kind===m[1]&&n.key===m[2])||null:null;};
  return object;
 }
 export function boot(initial,{now=Date.now(),storage=null,lock=locks(),cloud={}}={}){
@@ -58,9 +59,9 @@ export function boot(initial,{now=Date.now(),storage=null,lock=locks(),cloud={}}
   return app.querySelector(s)||modal.querySelector(s);
  }};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[current]));}static now(){return current;}}
- const downloads=[];const context=vm.createContext({id,gb,us,es,fr,ru,Date:FakeDate,crypto:crypto.webcrypto,document,localStorage,structuredClone,TextEncoder,Blob,URL:{createObjectURL(blob){downloads.push(blob);return 'blob:mock';},revokeObjectURL(){}},navigator:{locks:lock},CSS:{escape:x=>x},matchMedia:()=>({matches:false,addEventListener(){}}),window:{addEventListener(t,h){const prior=windowEvents[t];windowEvents[t]=event=>{prior?.(event);return h(event);};},scrollTo(){}},setInterval(fn){interval=fn;},setTimeout(){return 1;},clearTimeout(){},FormData:function(f){return f.fd;},cloud:{getConfig:()=>({}),...cloud},...themes});
+ const downloads=[];const context=vm.createContext({id,gb,us,es,fr,ru,Date:FakeDate,crypto:crypto.webcrypto,document,localStorage,structuredClone,TextEncoder,Blob,URL:{createObjectURL(blob){downloads.push(blob);return 'blob:mock';},revokeObjectURL(){}},navigator:{locks:lock},CSS:{escape:x=>x},matchMedia:()=>({matches:false,addEventListener(){}}),window:{addEventListener(t,h){const prior=windowEvents[t];windowEvents[t]=event=>{prior?.(event);return h(event);};},scrollTo(){}},setInterval(fn){if(!interval)interval=fn;},setTimeout(){return 1;},clearTimeout(){},FormData:function(f){return f.fd;},cloud:{getConfig:()=>({}),...cloud},createSync,parseWorkspace,documentOf,...themes});
  document.createElement=()=>({click(){}});
  app.onFocus=el=>document.activeElement=el;
- vm.runInContext(localisation+'\n'+core+'\n'+locking+'\n'+dates+'\n'+source+'\nglobalThis.replay={mutate,handleAction,editTask,editSubject,showDay,render,replaceData,exportData,setLocale,getLocale,t,message,LocalisedError,validateForm,getState:()=>state,getTaskDate:()=>taskDate};',context);
+ vm.runInContext(localisation+'\n'+core+'\n'+locking+'\n'+dates+'\n'+source+'\nglobalThis.replay={mutate,handleAction,editTask,editSubject,showDay,render,replaceData,exportData,setLocale,getLocale,t,message,LocalisedError,validateForm,getState:()=>state,getTaskDate:()=>taskDate,getSync:()=>syncEngine};',context);
  return {api:context.replay,document,app,modal,toast,error,status,events,windowEvents,map,downloads,authForm:()=>Object.assign(form(),{id:'cloud-auth'}),tick:()=>interval(),advance:ms=>current+=ms,clock:()=>current};
 }

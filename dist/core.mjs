@@ -1,4 +1,4 @@
-import {LocalisedError} from './i18n.mjs';
+import {LocalisedError,validCivilDate} from './i18n.mjs';
 export const LIMITS = Object.freeze({subjects:100,tasks:20000,sessions:100000});
 // Covers the maximum exported schema, including escaped 300-character task titles.
 export const MAX_BACKUP_BYTES = 128*1024*1024;
@@ -97,7 +97,7 @@ export function validateState(v) {
  const validId=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(id);
  const validTime=t=>Number.isSafeInteger(t)&&t>=0&&t<=8640000000000000;
  const ids=new Set();for(const x of v.subjects){if(!x||!validId(x.id)||ids.has(x.id)||typeof x.name!=='string'||!x.name.trim()||x.name.length>80||!/^#[0-9a-f]{6}$/i.test(x.color)||(x.archived!==undefined&&typeof x.archived!=='boolean'))fail();ids.add(x.id);}
- const taskIds=new Set();for(const x of v.tasks){if(!x||!validId(x.id)||taskIds.has(x.id)||typeof x.title!=='string'||!x.title.trim()||x.title.length>300||typeof x.done!=='boolean'||typeof x.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||x.date.startsWith('0000-')||!Number.isFinite(+parseDay(x.date))||dayKey(parseDay(x.date))!==x.date||(x.subjectId&&!ids.has(x.subjectId)))fail();taskIds.add(x.id);}
+ const taskIds=new Set();for(const x of v.tasks){if(!x||!validId(x.id)||taskIds.has(x.id)||typeof x.title!=='string'||!x.title.trim()||x.title.length>300||typeof x.done!=='boolean'||!validCivilDate(x.date)||(x.subjectId&&!ids.has(x.subjectId)))fail();taskIds.add(x.id);}
  const sessionIds=new Set(),runSubjects=new Map();for(const x of v.sessions){if(!x||!validId(x.id)||sessionIds.has(x.id)||!validId(x.runId)||!ids.has(x.subjectId)||!validTime(x.start)||!validTime(x.end)||x.end<x.start||!Number.isSafeInteger(x.durationMs)||x.durationMs!==x.end-x.start)fail();if(runSubjects.has(x.runId)&&runSubjects.get(x.runId)!==x.subjectId)fail();runSubjects.set(x.runId,x.subjectId);sessionIds.add(x.id);}
  if(!Number.isSafeInteger(v.timer.elapsedMs)||v.timer.elapsedMs<0||(v.timer.subjectId&&!ids.has(v.timer.subjectId))||!validId(v.timer.runId)||(v.timer.startedAt!==null&&(!validTime(v.timer.startedAt)||v.timer.startedAt>Date.now()+60000)))fail();
  if((v.timer.startedAt!==null||v.timer.elapsedMs>0)&&(!v.timer.subjectId||v.subjects.find(x=>x.id===v.timer.subjectId)?.archived))fail();
